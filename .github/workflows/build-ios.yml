@@ -113,10 +113,75 @@ jobs:
           echo "== 已安装的 Pod =="
           cat Podfile.lock
 
-      # --no-codesign 是关键：不签名才能在没有 Apple 开发者证书的 CI 上出包，
-      # 由用户本地用 AltStore/Sideloadly 自签。
+      # 出未签名 ipa 的两条路径，先试官方那条，失败再回退。
+      #
+      # 主路径 `flutter build ios --no-codesign` 在本仓库验证过可以成功，
+      # 但它会走 Flutter 自己的签名校验，在冷缓存等情况下可能报：
+      #   "Building a deployable iOS app requires a selected Development Team
+      #    with a Provisioning Profile."
+      # 该失败发生在 Xcode 编译已经完成之后，属于后置校验，不是代码问题。
+      #
+      # 回退路径直接调用 xcodebuild 并显式关闭全部签名开关，绕开该校验。
+      # 无论走哪条，最终都把产物放到 build/ios/iphoneos/Runner.app。
       - name: Build iOS (release, unsigned)
-        run: flutter build ios --release --no-codesign
+        run: |
+          set -uo pipefail
+
+          echo "== 主路径: flutter build ios --release --no-codesign =="
+          if flutter build ios --release --no-codesign 2>&1 | tee /tmp/flutter_build.log; then
+            if [ -d build/ios/iphoneos/Runner.app ]; then
+              echo "flutter build ios 成功"
+              exit 0
+            fi
+          fi
+
+          echo
+          echo "::warning::flutter build ios 未产出可用产物，改用 xcodebuild 兜底"
+
+          # Flutter 的构建脚本挂在 Xcode 的 Run Script 阶段里，
+          # 因此 xcodebuild 会自动完成 Dart 编译与 App.framework 组装。
+          set -e
+          xcodebuild \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build/ios_dd \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_ENTITLEMENTS="" \
+            EXPANDED_CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            DEVELOPMENT_TEAM="" \
+            ONLY_ACTIVE_ARCH=NO \
+            2>&1 | tee /tmp/xcodebuild.log
+
+          APP="$(find build/ios_dd/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n 1)"
+          if [ -z "$APP" ]; then
+            echo "::error::xcodebuild 也未产出 .app"
+            tail -60 /tmp/xcodebuild.log
+            exit 1
+          fi
+          echo "xcodebuild 产出: $APP"
+
+          mkdir -p build/ios/iphoneos
+          rm -rf build/ios/iphoneos/Runner.app
+          cp -R "$APP" build/ios/iphoneos/Runner.app
+
+      - name: Report build output
+        if: always()
+        run: |
+          set -uo pipefail
+          echo "### iOS 构建产物" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          if [ -d build/ios/iphoneos/Runner.app ]; then
+            du -sh build/ios/iphoneos/Runner.app >> "$GITHUB_STEP_SUMMARY"
+            ls build/ios/iphoneos/Runner.app >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "NO APP PRODUCED" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Package unsigned IPA
         run: |
