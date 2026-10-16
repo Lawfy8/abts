@@ -261,28 +261,103 @@ def _write_podfile_from_template(target: Path, deployment: str) -> None:
 # ---------------------------------------------------------------- 友盟瘦身
 
 
-def keep_umeng_native_deps() -> None:
-    """保留 umeng 的 UMCommon / UMDevice 原生依赖（不要移除）。
+def patch_umeng_podspec() -> None:
+    """修正 umeng 插件在 iOS 上的两处问题。
 
-    这里曾经尝试移除这两条依赖，理由是「iOS 端插件像空壳」。那个判断
-    是错的：插件里除了只处理 getPlatformVersion 的
-    `UmengCommonSdkPlugin.swift`，还有一个真正参与编译的
-    `UmengCommonSdkPlugin.m`，它开头就 import 了：
+    插件的 `ios/Classes/` 下同时存在三个文件：
 
-        #import <UMCommon/UMConfigure.h>
-        #import <UMCommon/MobClick.h>
+        UmengCommonSdkPlugin.h      声明 @interface UmengCommonSdkPlugin
+        UmengCommonSdkPlugin.m      实现该类（initCommon / onEvent /
+                                    onPageStart / onPageEnd / reportError
+                                    等全部逻辑都在这里）
+        UmengCommonSdkPlugin.swift  又声明了同名的 Swift 类
 
-    移除依赖后 Xcode 会直接报：
-
-        Lexical or Preprocessor Issue (Xcode):
+    **问题 1：不能移除原生依赖。**
+    `.m` 开头就是 `#import <UMCommon/UMConfigure.h>`，把 podspec 里的
+    UMCommon / UMDevice 去掉会让 Xcode 报：
         'UMCommon/UMConfigure.h' file not found
-        .../umeng_common_sdk-1.3.1/ios/Classes/UmengCommonSdkPlugin.m:1:8
+    -> 保持依赖原样。
 
-    因此保留依赖不动。Dart 侧仍在 iOS 上跳过友盟初始化（见
-    lib/services/umeng_analytics.dart）——因为代码里的 AppKey 是 Android
-    专用的，iOS 需要单独申请，贸然使用会把数据上报到错误的应用上。
+    **问题 2：Swift 存根与 ObjC 实现重名。**
+    Swift 类继承 NSObject 且遵循 @objc 的 FlutterPlugin 协议，因此对
+    ObjC 可见，与 `.h` 里的 @interface 冲突，Xcode 报：
+        Semantic Issue (Xcode):
+        Duplicate interface definition for class 'UmengCommonSdkPlugin'
+    -> 把 source_files 收窄为 .h/.m 并排除 .swift。
+       `.m` 已覆盖 Dart 侧用到的全部方法，不会丢功能；Flutter 生成的
+       registrant 调用的 `registerWithRegistrar:` 也在 `.m` 里。
     """
-    log("  保留 umeng 的 UMCommon / UMDevice 原生依赖（iOS 端确有实现）")
+    deps_json = PROJECT_ROOT / ".flutter-plugins-dependencies"
+    if not deps_json.exists():
+        warn("未找到 .flutter-plugins-dependencies，跳过 umeng podspec 修正")
+        return
+
+    import json
+
+    try:
+        data = json.loads(deps_json.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        warn(f"解析 .flutter-plugins-dependencies 失败，跳过：{exc}")
+        return
+
+    plugin_root: Path | None = None
+    for plugin in data.get("plugins", {}).get("ios", []):
+        if plugin.get("name") == "umeng_common_sdk":
+            path = plugin.get("path")
+            if path:
+                plugin_root = Path(path)
+            break
+
+    if plugin_root is None:
+        log("  iOS 插件列表中没有 umeng_common_sdk，跳过")
+        return
+
+    podspec = plugin_root / "ios" / "umeng_common_sdk.podspec"
+    if not podspec.exists():
+        warn(f"未找到 {podspec}，跳过")
+        return
+
+    content = podspec.read_text(encoding="utf-8")
+
+    if "[abts-ios]" in content:
+        log("  umeng podspec 已修正过，跳过")
+        return
+
+    # 只在确认「同名冲突」真实存在时才动手，避免又一次误判
+    swift_file = plugin_root / "ios" / "Classes" / "UmengCommonSdkPlugin.swift"
+    objc_header = plugin_root / "ios" / "Classes" / "UmengCommonSdkPlugin.h"
+    objc_impl = plugin_root / "ios" / "Classes" / "UmengCommonSdkPlugin.m"
+
+    if not (swift_file.exists() and objc_header.exists() and objc_impl.exists()):
+        log("  umeng 插件结构与预期不同（缺少 .swift/.h/.m 之一），不做改动")
+        return
+
+    header_text = objc_header.read_text(encoding="utf-8", errors="replace")
+    swift_text = swift_file.read_text(encoding="utf-8", errors="replace")
+    if "UmengCommonSdkPlugin" not in header_text or "UmengCommonSdkPlugin" not in swift_text:
+        log("  未确认到同名类，不做改动")
+        return
+
+    old_line = "  s.source_files = 'Classes/**/*'"
+    if old_line not in content:
+        warn("  podspec 的 source_files 行与预期不符，未做改动")
+        warn(f"    期望: {old_line!r}")
+        return
+
+    new_block = (
+        "  s.source_files = 'Classes/**/*.{h,m}'\n"
+        "  # [abts-ios] Exclude the Swift stub. It declares the same class as\n"
+        "  # UmengCommonSdkPlugin.h/.m, and Swift classes deriving from NSObject\n"
+        "  # that conform to the @objc FlutterPlugin protocol are visible to\n"
+        "  # Objective-C, so Xcode fails with:\n"
+        "  #   Duplicate interface definition for class 'UmengCommonSdkPlugin'\n"
+        "  # The .m implementation covers every method the Dart side uses.\n"
+        "  s.exclude_files = 'Classes/**/*.swift'"
+    )
+
+    podspec.write_text(content.replace(old_line, new_block, 1), encoding="utf-8")
+    log("  已排除 umeng 的 Swift 存根（与 .h 同名导致 Xcode 重复定义）")
+    log(f"    {podspec}")
 
 
 # ---------------------------------------------------------------- 主流程
@@ -350,7 +425,7 @@ def main() -> None:
     overlay_runner_files()
     merge_info_plist()
     ensure_podfile()
-    keep_umeng_native_deps()
+    patch_umeng_podspec()
     verify()
 
     print()
