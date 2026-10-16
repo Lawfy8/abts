@@ -1,9 +1,11 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/theme/app_theme.dart';
 import '../services/auth_store.dart';
 import '../services/device_service.dart';
+import '../utils/image_url.dart';
 import 'login_page.dart';
 
 /// 设置（独立页面）：账号信息 + 播放与后台。未登录也可进入
@@ -174,7 +176,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 border: Border.all(color: AppTheme.divider),
                 image: logged && auth.userFace.isNotEmpty
                     ? DecorationImage(
-                        image: NetworkImage(auth.userFace),
+                        image: CachedNetworkImageProvider(
+                          ImageUrl.avatar(auth.userFace),
+                          headers: ImageUrl.headers,
+                        ),
                         fit: BoxFit.cover,
                         onError: (_, _) {},
                       )

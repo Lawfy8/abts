@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -12,6 +13,7 @@ import '../player/book_player.dart';
 import '../services/bili_api.dart';
 import '../services/umeng_analytics.dart';
 import '../utils/format.dart';
+import '../utils/image_url.dart';
 import '../widgets/book_cover.dart';
 import 'cache_sheet.dart';
 import 'player_page.dart';
@@ -272,7 +274,10 @@ Text(
                           radius: 10,
                           backgroundColor: AppTheme.surfaceHigh,
                           backgroundImage: book.authorFace.isNotEmpty
-                              ? NetworkImage(book.authorFace)
+                              ? CachedNetworkImageProvider(
+                                  ImageUrl.avatar(book.authorFace),
+                                  headers: ImageUrl.headers,
+                                )
                               : null,
                           child: book.authorFace.isEmpty
                               ? const Icon(Icons.person, size: 12)

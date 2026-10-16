@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +10,7 @@ import '../models/up_user.dart';
 import '../services/bili_api.dart';
 import '../services/umeng_analytics.dart';
 import '../utils/format.dart';
+import '../utils/image_url.dart';
 import '../widgets/book_cover.dart';
 import 'book_detail_page.dart';
 import 'search_page.dart';
@@ -182,8 +184,12 @@ class _UpHomePageState extends State<UpHomePage> {
                 child: CircleAvatar(
                   radius: 27,
                   backgroundColor: AppTheme.surfaceHigh,
-                  backgroundImage:
-                      up.face.isNotEmpty ? NetworkImage(up.face) : null,
+                  backgroundImage: up.face.isNotEmpty
+                      ? CachedNetworkImageProvider(
+                          ImageUrl.avatar(up.face),
+                          headers: ImageUrl.headers,
+                        )
+                      : null,
                   child: up.face.isEmpty
                       ? const Icon(Icons.person_rounded,
                           size: 28, color: AppTheme.accent)

@@ -6,6 +6,7 @@ import '../models/audio_stream.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/up_user.dart';
+import '../utils/image_url.dart';
 
 /// UP 合集摊平游标：把该 UP 的多个合集当一条长列表顺序翻页
 class _UpCursor {
@@ -622,7 +623,8 @@ class BiliApi {
     return (
       isLogin: data['isLogin'] == true,
       uname: data['uname'] as String? ?? '',
-      face: data['face'] as String? ?? '',
+      // nav 返回的 face 可能是 http://，iOS 的 ATS 会拦掉明文图源
+      face: ImageUrl.https(data['face'] as String? ?? ''),
     );
   }
 }

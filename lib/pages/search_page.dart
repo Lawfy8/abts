@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -11,6 +12,7 @@ import '../models/up_user.dart';
 import '../services/bili_api.dart';
 import '../services/umeng_analytics.dart';
 import '../utils/format.dart';
+import '../utils/image_url.dart';
 import '../widgets/book_cards.dart';
 import 'book_detail_page.dart';
 import 'up_home_page.dart';
@@ -502,8 +504,12 @@ class _SearchPageState extends State<SearchPage> {
           leading: CircleAvatar(
             radius: 22,
             backgroundColor: AppTheme.surfaceHigh,
-            backgroundImage:
-                up.face.isNotEmpty ? NetworkImage(up.face) : null,
+            backgroundImage: up.face.isNotEmpty
+                ? CachedNetworkImageProvider(
+                    ImageUrl.avatar(up.face),
+                    headers: ImageUrl.headers,
+                  )
+                : null,
             child: up.face.isEmpty
                 ? Icon(Icons.person, color: AppTheme.accent)
                 : null,

@@ -1,4 +1,5 @@
 import 'chapter.dart';
+import '../utils/image_url.dart';
 
 /// 一本书（B 站视频），picture/bvid/作者/统计/多P章节
 class Book {
@@ -112,7 +113,7 @@ class Book {
       duration: int.tryParse('${m['duration'] ?? 0}') ?? 0,
       author: owner['name'] as String? ?? '',
       mid: int.tryParse('${owner['mid'] ?? 0}') ?? 0,
-      authorFace: owner['face'] as String? ?? '',
+      authorFace: ImageUrl.https(owner['face'] as String? ?? ''),
       desc: m['desc'] as String? ?? '',
       play: int.tryParse('${stat['view'] ?? 0}') ?? 0,
       like: int.tryParse('${stat['like'] ?? 0}') ?? 0,
@@ -149,7 +150,7 @@ class Book {
         duration: int.tryParse('${m['duration'] ?? 0}') ?? 0,
         author: m['author'] as String? ?? '',
         mid: int.tryParse('${m['mid'] ?? 0}') ?? 0,
-        authorFace: m['authorFace'] as String? ?? '',
+        authorFace: ImageUrl.https(m['authorFace'] as String? ?? ''),
         desc: m['desc'] as String? ?? '',
         play: int.tryParse('${m['play'] ?? 0}') ?? 0,
       );

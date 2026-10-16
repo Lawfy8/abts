@@ -1,9 +1,11 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/storage/follow_store.dart';
 import '../core/theme/app_theme.dart';
 import '../utils/format.dart';
+import '../utils/image_url.dart';
 import 'up_home_page.dart';
 
 /// 我关注的 UP 主
@@ -47,8 +49,12 @@ class FollowPage extends StatelessWidget {
                   leading: CircleAvatar(
                     radius: 20,
                     backgroundColor: AppTheme.surfaceHigh,
-                    backgroundImage:
-                        up.face.isNotEmpty ? NetworkImage(up.face) : null,
+                    backgroundImage: up.face.isNotEmpty
+                        ? CachedNetworkImageProvider(
+                            ImageUrl.avatar(up.face),
+                            headers: ImageUrl.headers,
+                          )
+                        : null,
                     child: up.face.isEmpty
                         ? Icon(Icons.person, color: AppTheme.accent)
                         : null,

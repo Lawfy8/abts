@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -13,6 +14,7 @@ import '../services/app_update.dart';
 import '../services/auth_store.dart';
 import '../services/browser.dart';
 import '../services/umeng_analytics.dart';
+import '../utils/image_url.dart';
 import '../widgets/book_cover.dart';
 import 'about_page.dart';
 import 'cache_page.dart';
@@ -189,7 +191,12 @@ class MyPage extends StatelessWidget {
                 border: Border.all(color: AppTheme.divider),
                 image: auth.userFace.isNotEmpty
                     ? DecorationImage(
-                        image: NetworkImage(auth.userFace),
+                        // 用 CachedNetworkImageProvider 取磁盘缓存：
+                        // 裸 NetworkImage 只有内存缓存，冷启动后要重新下载
+                        image: CachedNetworkImageProvider(
+                          ImageUrl.avatar(auth.userFace),
+                          headers: ImageUrl.headers,
+                        ),
                         fit: BoxFit.cover,
                         onError: (_, _) {},
                       )

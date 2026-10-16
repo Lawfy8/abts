@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/network/bili_client.dart';
+import '../utils/image_url.dart';
 import 'bili_api.dart';
 
 /// 登录态 + 用户信息（本地持久化，供 UI 展示）
@@ -31,7 +32,9 @@ class LoginStore extends ChangeNotifier {
         final m = jsonDecode(raw) as Map;
         _isLogin = m['login'] == true;
         _userName = m['name'] as String? ?? '';
-        _userFace = m['face'] as String? ?? '';
+        // 旧版本可能存过 http:// 的头像地址，读出来时一并归一化，
+        // 否则升级后头像仍是空白（iOS ATS 会拦明文图源）
+        _userFace = ImageUrl.https(m['face'] as String? ?? '');
       } catch (_) {}
     } else {
       _isLogin = _client.isLoggedIn;
