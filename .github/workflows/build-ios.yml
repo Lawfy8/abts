@@ -54,15 +54,36 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          # 必须 >= pubspec.lock 里的 flutter: ">=3.38.4"
-          flutter-version: ${{ inputs.flutter_version || '3.38.4' }}
+          # Must bundle Dart >= 3.10.8, because pubspec.yaml declares
+          # `sdk: ^3.10.8`. Flutter 3.38.4 only ships Dart 3.10.3 and makes
+          # `flutter pub get` fail with "version solving failed", so this is
+          # the oldest 3.38.x release that actually satisfies the constraint.
+          flutter-version: ${{ inputs.flutter_version || '3.38.9' }}
           channel: stable
           cache: true
 
-      - name: Show toolchain
+      - name: Show toolchain and verify Dart version
         run: |
+          set -euo pipefail
           flutter --version
           dart --version
+
+          # Fail here with a clear message rather than deep inside pub get.
+          DART_VER="$(dart --version 2>&1 | sed -E 's/.*version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+          echo "Dart SDK detected: ${DART_VER}"
+          if [ -z "${DART_VER}" ]; then
+            echo "::error::Could not parse the Dart version"
+            exit 1
+          fi
+          # Sort the required and detected versions; the smaller one must be
+          # the required version, otherwise the detected one is too old.
+          LOWEST="$(printf '%s\n' '3.10.8' "${DART_VER}" | sort -V | head -n 1)"
+          if [ "${LOWEST}" != "3.10.8" ]; then
+            echo "::error::Dart ${DART_VER} is older than the 3.10.8 required by pubspec.yaml"
+            echo "::error::Pick a Flutter release that bundles Dart >= 3.10.8 (e.g. 3.38.9)."
+            exit 1
+          fi
+          echo "Dart version OK"
 
       # 第一次 pub get：生成 .flutter-plugins-dependencies，
       # bootstrap 需要它来定位 umeng_common_sdk 的 podspec。
