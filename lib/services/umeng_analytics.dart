@@ -9,11 +9,14 @@ import 'package:umeng_common_sdk/umeng_common_sdk.dart';
 /// - 页面统计手动模式，只统计主 Tab，不逐页打点；
 /// - 全部调用 try/catch 包裹，统计故障绝不影响 App 主流程。
 ///
-/// **iOS 说明**：`umeng_common_sdk` 1.3.1 的 iOS 端是空壳实现
-/// （`UmengCommonSdkPlugin.swift` 只处理 `getPlatformVersion`，其余方法一律返回
-/// `FlutterMethodNotImplemented`），所以 iOS 上统计不工作。这里显式短路，
-/// 避免每次打点都抛一次 PlatformException；同时 bootstrap 会移除该插件在
-/// iOS 上并不需要的 UMCommon / UMDevice 原生依赖。
+/// **iOS 说明**：统计只在 Android 上初始化。原因是本文件里的 AppKey 是
+/// Android 专用的——友盟要求 iOS 单独申请 AppKey，拿 Android 的 key 去
+/// 初始化会把数据上报到错误的应用上，因此 iOS 侧直接不启用。
+///
+/// 注意：不要试图为此移除 umeng 插件的 UMCommon / UMDevice 原生依赖。
+/// 插件的 `UmengCommonSdkPlugin.m` 会 `#import <UMCommon/UMConfigure.h>`，
+/// 移除依赖会让 Xcode 报 "'UMCommon/UMConfigure.h' file not found"。
+/// 依赖保留不影响这里的短路逻辑。
 class AppAnalytics {
   AppAnalytics._();
 
