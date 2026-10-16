@@ -261,75 +261,28 @@ def _write_podfile_from_template(target: Path, deployment: str) -> None:
 # ---------------------------------------------------------------- 友盟瘦身
 
 
-def strip_umeng_native_deps() -> None:
-    """去掉 umeng_common_sdk 在 iOS 上并不需要的两个原生 SDK 依赖。
+def keep_umeng_native_deps() -> None:
+    """保留 umeng 的 UMCommon / UMDevice 原生依赖（不要移除）。
 
-    事实依据（`umeng_common_sdk` 1.3.1 的 iOS 源码）：`UmengCommonSdkPlugin.swift`
-    只实现了 `getPlatformVersion`，其余方法一律 `FlutterMethodNotImplemented`
-    ——iOS 端是**空壳**，统计功能根本不会工作。但它的 podspec 仍声明了
-    `s.dependency 'UMCommon'` 与 `s.dependency 'UMDevice'`，会把两个体积可观
-    的原生库拖进包体。
+    这里曾经尝试移除这两条依赖，理由是「iOS 端插件像空壳」。那个判断
+    是错的：插件里除了只处理 getPlatformVersion 的
+    `UmengCommonSdkPlugin.swift`，还有一个真正参与编译的
+    `UmengCommonSdkPlugin.m`，它开头就 import 了：
 
-    对自签安装（AltStore/Sideloadly，7 天重签）来说，包体越小越省事，而且
-    这两条依赖是本工程里唯一需要从 CocoaPods CDN 拉取的第三方 pod，去掉后
-    构建不再受外部仓库可用性影响。
+        #import <UMCommon/UMConfigure.h>
+        #import <UMCommon/MobClick.h>
 
-    做法：把 podspec 里那两行依赖注释掉。Swift 源码只 import Flutter/UIKit，
-    去掉依赖后照常编译。
+    移除依赖后 Xcode 会直接报：
+
+        Lexical or Preprocessor Issue (Xcode):
+        'UMCommon/UMConfigure.h' file not found
+        .../umeng_common_sdk-1.3.1/ios/Classes/UmengCommonSdkPlugin.m:1:8
+
+    因此保留依赖不动。Dart 侧仍在 iOS 上跳过友盟初始化（见
+    lib/services/umeng_analytics.dart）——因为代码里的 AppKey 是 Android
+    专用的，iOS 需要单独申请，贸然使用会把数据上报到错误的应用上。
     """
-    deps_json = PROJECT_ROOT / ".flutter-plugins-dependencies"
-    if not deps_json.exists():
-        warn("未找到 .flutter-plugins-dependencies，跳过友盟瘦身（需先 flutter pub get）")
-        return
-
-    import json
-
-    try:
-        data = json.loads(deps_json.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        warn(f"解析 .flutter-plugins-dependencies 失败，跳过友盟瘦身：{exc}")
-        return
-
-    plugin_root: Path | None = None
-    for plugin in data.get("plugins", {}).get("ios", []):
-        if plugin.get("name") == "umeng_common_sdk":
-            path = plugin.get("path")
-            if path:
-                plugin_root = Path(path)
-            break
-
-    if plugin_root is None:
-        log("  iOS 插件列表中没有 umeng_common_sdk，无需瘦身")
-        return
-
-    podspec = plugin_root / "ios" / "umeng_common_sdk.podspec"
-    if not podspec.exists():
-        warn(f"未找到 {podspec}，跳过友盟瘦身")
-        return
-
-    content = podspec.read_text(encoding="utf-8")
-    if "[abts-ios] 移除" in content:
-        log("  友盟 podspec 已瘦身，跳过")
-        return
-    if "UMCommon" not in content:
-        log("  友盟 podspec 未声明 UMCommon，无需瘦身")
-        return
-
-    stripped = re.sub(
-        r"^(\s*)s\.dependency\s+'(UMCommon|UMDevice)'\s*$",
-        r"\1# [abts-ios] 移除：iOS 端插件为空壳，不需要原生统计 SDK\n"
-        r"\1# s.dependency '\2'",
-        content,
-        flags=re.MULTILINE,
-    )
-
-    if stripped == content:
-        warn("  未能匹配到 UMCommon/UMDevice 依赖行，保持原样")
-        return
-
-    podspec.write_text(stripped, encoding="utf-8")
-    log("  已移除 UMCommon / UMDevice 两条原生依赖（iOS 端插件为空壳）")
-    log(f"    {podspec}")
+    log("  保留 umeng 的 UMCommon / UMDevice 原生依赖（iOS 端确有实现）")
 
 
 # ---------------------------------------------------------------- 主流程
@@ -397,7 +350,7 @@ def main() -> None:
     overlay_runner_files()
     merge_info_plist()
     ensure_podfile()
-    strip_umeng_native_deps()
+    keep_umeng_native_deps()
     verify()
 
     print()
