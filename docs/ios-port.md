@@ -98,16 +98,28 @@ iOS 不会发出 `ducked`，音量闪避由系统完成，因此 `BookPlayer._du
 
 ## 已处理的坑
 
-**1. 友盟 iOS 端是空壳**
+**1. 友盟的原生依赖不能移除（一个踩过的坑）**
 
-`umeng_common_sdk` 1.3.1 的 iOS 实现（`UmengCommonSdkPlugin.swift`）只处理
-`getPlatformVersion`，其余方法一律返回 `FlutterMethodNotImplemented`——统计
-在 iOS 上根本不工作。但它的 podspec 仍声明 `UMCommon` 与 `UMDevice` 两条原生
-依赖，会把两个大体积 SDK 拖进包体，而且是本工程里唯一需要从 CocoaPods CDN
-拉取的第三方 pod。
+`umeng_common_sdk` 1.3.1 里有两个 iOS 实现文件：
 
-处理：bootstrap 把这两行依赖注释掉（Swift 源码只 import Flutter/UIKit，去掉
-后照常编译），Dart 侧在 iOS 上直接短路，避免每次打点都抛一次异常。
+- `UmengCommonSdkPlugin.swift` —— 只处理 `getPlatformVersion`，看着像空壳；
+- `UmengCommonSdkPlugin.m` —— **真正参与编译的 Objective-C 实现**，开头就
+  `#import <UMCommon/UMConfigure.h>` 与 `#import <UMCommon/MobClick.h>`。
+
+最初只看了 `.swift`，误判为「iOS 端是空壳」，于是把 podspec 里的 `UMCommon`、
+`UMDevice` 两条依赖注释掉了。结果 CI 的 Xcode 编译直接失败：
+
+```
+Lexical or Preprocessor Issue (Xcode):
+'UMCommon/UMConfigure.h' file not found
+.../umeng_common_sdk-1.3.1/ios/Classes/UmengCommonSdkPlugin.m:1:8
+```
+
+**结论：这两条依赖必须保留。** bootstrap 现在不做任何改动。
+
+Dart 侧仍在 iOS 上跳过友盟初始化（见 `lib/services/umeng_analytics.dart`），
+但原因是**另一个**：代码里写死的 AppKey 是 Android 专用的，友盟要求 iOS
+单独申请 AppKey，拿 Android 的 key 初始化会把数据上报到错误的应用上。
 
 **2. iOS 图标不允许带 alpha 通道**
 
@@ -140,7 +152,7 @@ AppDelegate 改为通过 `registrar(forPlugin:)` 取 messenger，不依赖 windo
 | 离线缓存（文件） | ✅ 文件下载在 Dart 层 |
 | **缓存进度通知栏** | ❌ iOS 无前台服务通知，降级为 App 内 UI |
 | **电池优化豁免引导** | ❌ 恒返回已豁免，不显示引导 |
-| **友盟统计** | ❌ 插件 iOS 端为空壳，已短路 |
+| **友盟统计** | ❌ iOS 上跳过初始化（代码里的 AppKey 是 Android 专用的） |
 | 保存二维码到相册 | ✅ 需用户授权相册写入 |
 
 ## 自签安装须知
