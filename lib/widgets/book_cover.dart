@@ -59,7 +59,8 @@ class BookCover extends StatelessWidget {
           width: width,
           height: height,
           color: AppTheme.surfaceHigh,
-          child: const Icon(
+          // 不能用 const：AppTheme.textHint 是运行时 getter
+          child: Icon(
             Icons.menu_book_outlined,
             color: AppTheme.textHint,
           ),
@@ -74,7 +75,8 @@ class BookCover extends StatelessWidget {
         height: height,
         color: AppTheme.surfaceHigh,
         alignment: Alignment.center,
-        child: const Icon(
+        // 不能用 const：AppTheme.textHint 是运行时 getter
+        child: Icon(
           Icons.menu_book_outlined,
           color: AppTheme.textHint,
           size: 32,
