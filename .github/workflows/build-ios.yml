@@ -1,0 +1,164 @@
+name: Build iOS IPA
+
+# 在 GitHub 的 macOS runner 上构建未签名 .ipa，供本地用 AltStore / Sideloadly
+# 配合免费 Apple ID 自签安装。
+#
+# 触发方式：
+#   * 手动：Actions → Build iOS IPA → Run workflow
+#   * 打 tag：推送 v1.2.0 这类 tag 会自动构建并把 ipa 附加到 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      flutter_version:
+        description: 'Flutter 版本（留空则用仓库根目录 .fvmrc / 默认 3.38.x）'
+        required: false
+        default: ''
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-ipa:
+    name: Build unsigned IPA
+    # iOS 产物只能在 macOS 上编译，无法绕过
+    runs-on: macos-14
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          # pubspec.lock 要求 Flutter >= 3.38.4，需要 Xcode 15.3+。
+          # runner 预装多个 Xcode，按可用性挑一个最新的 15.x/16.x。
+          for candidate in \
+            /Applications/Xcode_16.4.app \
+            /Applications/Xcode_16.2.app \
+            /Applications/Xcode_16.0.app \
+            /Applications/Xcode_15.4.app \
+            /Applications/Xcode_15.3.app
+          do
+            if [ -d "$candidate" ]; then
+              sudo xcode-select -s "$candidate"
+              echo "选用 $candidate"
+              break
+            fi
+          done
+          xcodebuild -version
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          # 必须 >= pubspec.lock 里的 flutter: ">=3.38.4"
+          flutter-version: ${{ inputs.flutter_version || '3.38.4' }}
+          channel: stable
+          cache: true
+
+      - name: Show toolchain
+        run: |
+          flutter --version
+          dart --version
+
+      # 第一次 pub get：生成 .flutter-plugins-dependencies，
+      # bootstrap 需要它来定位 umeng_common_sdk 的 podspec。
+      - name: Install dependencies (1/2: plugin manifest)
+        run: flutter pub get
+
+      # 生成 ios/ 脚手架 + 叠加 iOS 定制层。这一步是幂等的：
+      # 若仓库里已有 ios/，只做覆盖与合并。
+      - name: Bootstrap iOS project
+        run: python3 tool/ios_bootstrap.py
+
+      # 第二次 pub get：此时 ios/ 已存在，Flutter 才会写出
+      # ios/Flutter/Generated.xcconfig。少了它 pod install 会直接报
+      # "Generated.xcconfig must exist. Run flutter pub get first."
+      - name: Install dependencies (2/2: generate ios config)
+        run: flutter pub get
+
+      - name: Install CocoaPods dependencies
+        working-directory: ios
+        run: |
+          # 不用 --repo-update：那会强制同步整个 specs 仓库（很慢且容易超时）。
+          # CocoaPods 默认走 CDN，按需拉取 spec 即可。
+          pod install
+          echo "== 已安装的 Pod =="
+          cat Podfile.lock
+
+      # --no-codesign 是关键：不签名才能在没有 Apple 开发者证书的 CI 上出包，
+      # 由用户本地用 AltStore/Sideloadly 自签。
+      - name: Build iOS (release, unsigned)
+        run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP_PATH="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::未找到 $APP_PATH"
+            exit 1
+          fi
+
+          rm -rf Payload abts-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+
+          # 自签工具需要可执行权限与正确的 bundle 结构
+          zip -qry abts-unsigned.ipa Payload
+
+          echo "### 产物信息" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          ls -lh abts-unsigned.ipa >> "$GITHUB_STEP_SUMMARY"
+          unzip -l abts-unsigned.ipa | head -20 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify IPA structure
+        run: |
+          set -euo pipefail
+          echo "== 顶层结构 =="
+          unzip -l abts-unsigned.ipa | head -15
+
+          # Payload/*.app/Info.plist 必须存在，否则自签工具会直接拒绝
+          unzip -o -q abts-unsigned.ipa -d _verify
+          test -f _verify/Payload/Runner.app/Info.plist \
+            || { echo "::error::ipa 缺少 Info.plist"; exit 1; }
+          test -f _verify/Payload/Runner.app/Runner \
+            || { echo "::error::ipa 缺少可执行文件"; exit 1; }
+
+          echo "== 关键 Info.plist 配置 =="
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" \
+            _verify/Payload/Runner.app/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" \
+            _verify/Payload/Runner.app/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" \
+            _verify/Payload/Runner.app/Info.plist
+
+          echo "== 嵌入的动态库（media_kit 等）=="
+          ls _verify/Payload/Runner.app/Frameworks/ 2>/dev/null | head -20 || true
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: abts-unsigned-ipa
+          path: abts-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach IPA to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: abts-unsigned.ipa
+          body: |
+            未签名 iOS 安装包，需自行签名后安装。
+
+            **用 AltStore / Sideloadly 安装：**
+            1. 下载 `abts-unsigned.ipa`
+            2. 用免费 Apple ID 签名（AltStore 侧载，或 Sideloadly 一键签名）
+            3. 免费账号签名的有效期 7 天，到期需重新签名
+
+            > 未签名包无法直接安装到未越狱设备，这是 iOS 的机制限制。

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  最小覆盖层：只声明与 Flutter 模板**不同**的键。
+	  bootstrap 用 plistlib 做合并，模板里的 CFBundleExecutable、
+	  UILaunchStoryboardName、UIApplicationSceneManifest 等一律保留原样——
+	  刻意不在这里重复声明，避免与模板选用的生命周期模型（是否用 UIScene）冲突。
+	-->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh_CN</string>
+	<key>CFBundleDisplayName</key>
+	<string>阿B听书</string>
+
+	<!-- 后台播放：有声书退到后台 / 锁屏后必须继续出声 -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+
+	<!-- 保存登录二维码到相册；只写入不读取，用 add-only 描述即可 -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>用于把登录二维码保存到你的相册</string>
+
+	<!-- media_kit(libmpv) 拉取音频流需要放宽 ATS；B 站部分 CDN 仍走 http -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+
+	<!-- 只用系统自带 HTTPS，声明无出口加密合规负担 -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<!-- 模板默认是 armv7（32 位），现代 iOS 只跑 arm64 -->
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+</dict>
+</plist>
