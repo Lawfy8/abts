@@ -115,11 +115,22 @@ Lexical or Preprocessor Issue (Xcode):
 .../umeng_common_sdk-1.3.1/ios/Classes/UmengCommonSdkPlugin.m:1:8
 ```
 
-**结论：这两条依赖必须保留。** bootstrap 现在不做任何改动。
+顺带发现同一个插件还有第二个问题：`.swift` 存根声明了与 `.h` **同名的类**
+（`UmengCommonSdkPlugin`）。Swift 类继承 `NSObject` 且遵循 `@objc` 的
+`FlutterPlugin` 协议，因此对 Objective-C 可见，Xcode 于是报：
 
-Dart 侧仍在 iOS 上跳过友盟初始化（见 `lib/services/umeng_analytics.dart`），
-但原因是**另一个**：代码里写死的 AppKey 是 Android 专用的，友盟要求 iOS
-单独申请 AppKey，拿 Android 的 key 初始化会把数据上报到错误的应用上。
+```
+Semantic Issue (Xcode):
+Duplicate interface definition for class 'UmengCommonSdkPlugin'
+```
+
+**处理方式**（bootstrap 自动完成，均已在 CI 验证）：
+
+1. 保留 `UMCommon` / `UMDevice` 两条依赖不动；
+2. 把 podspec 的 `source_files` 收窄为 `Classes/**/*.{h,m}`，并
+   `s.exclude_files = 'Classes/**/*.swift'` 排除那个存根。
+   `.m` 覆盖了 Dart 侧用到的全部方法（含 `registerWithRegistrar:`），
+   不会丢功能。
 
 **2. iOS 图标不允许带 alpha 通道**
 
