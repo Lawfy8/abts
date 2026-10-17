@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../services/auth_store.dart';
 import '../services/device_service.dart';
+import '../services/shelf_sync.dart';
 import '../utils/image_url.dart';
 import 'login_page.dart';
 
@@ -100,6 +101,9 @@ class _SettingsPageState extends State<SettingsPage> {
         padding: const EdgeInsets.only(top: 8, bottom: 32),
         children: [
           _buildAccountCard(auth),
+          const SizedBox(height: 12),
+          _sectionTitle('书架同步'),
+          _buildSyncTile(auth),
           // 「播放与后台」整块只在 Android 出现。
           // 「忽略电池优化」是 Android 独有概念；iOS 没有对应权限，
           // DeviceService 在非 Android 上直接返回 true，于是开关永远显示
@@ -162,6 +166,123 @@ class _SettingsPageState extends State<SettingsPage> {
           color: AppTheme.textMain,
         ),
       ),
+    );
+  }
+
+  /// 书架同步卡片：开关 + 上次同步时间 + 立即同步按钮
+  ///
+  /// 书架内容存在 B 站账号的收藏夹里（专用收藏夹「阿B听书书架」），
+  /// 所以只要两端登录同一个 B 站账号，书架就自动一致。
+  Widget _buildSyncTile(LoginStore auth) {
+    final sync = ShelfSync.instance;
+    // 听存储层的通知（队列长度、运行状态会变）
+    return AnimatedBuilder(
+      animation: sync,
+      builder: (context, _) {
+        final logged = auth.isLogin;
+        final running = sync.isRunning;
+        final last = sync.lastSyncAt;
+        final pending = sync.pendingAddCount + sync.pendingRemoveCount;
+
+        String subtitle;
+        if (!logged) {
+          subtitle = '登录 B 站账号后，书架会自动在设备之间同步';
+        } else if (running) {
+          subtitle = '正在同步…';
+        } else if (last == 0) {
+          subtitle = '尚未同步，点击右侧按钮立即同步';
+        } else {
+          final t = DateTime.fromMillisecondsSinceEpoch(last);
+          final stamp = '${t.year}-${_two(t.month)}-${_two(t.day)} '
+              '${_two(t.hour)}:${_two(t.minute)}';
+          subtitle = '上次同步 $stamp';
+          if (pending > 0) subtitle += '（$pending 项待上传）';
+        }
+
+        return Column(
+          children: [
+            SwitchListTile(
+              value: sync.enabled,
+              onChanged: logged && !running
+                  ? (v) async {
+                      await sync.setEnabled(v);
+                      if (v) {
+                        final r = await sync.sync();
+                        if (!mounted) return;
+                        _toastSync(r);
+                      }
+                    }
+                  : null,
+              activeThumbColor: AppTheme.accent,
+              secondary: Icon(Icons.cloud_sync_rounded,
+                  color: logged ? AppTheme.accent : AppTheme.textHint),
+              title: Text(
+                '书架跨设备同步',
+                style: TextStyle(fontSize: 14, color: AppTheme.textMain),
+              ),
+              subtitle: Text(
+                subtitle,
+                style: TextStyle(fontSize: 12, color: AppTheme.textSub),
+              ),
+            ),
+            if (logged)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '书架存在你的 B 站收藏夹「阿B听书书架」里，'
+                        '换设备登录同一账号即可看到。',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.textHint,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: running ? null : () async {
+                        final r = await sync.sync();
+                        if (!mounted) return;
+                        _toastSync(r);
+                      },
+                      icon: running
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.sync_rounded, size: 16),
+                      label: Text(running ? '同步中' : '立即同步'),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  static String _two(int v) => v < 10 ? '0$v' : '$v';
+
+  void _toastSync(ShelfSyncResult r) {
+    String msg;
+    if (!r.ok) {
+      msg = r.error ?? '同步失败';
+    } else if (r.pulled == 0 && r.pushed == 0 && r.deleted == 0) {
+      msg = '已是最新';
+    } else {
+      final parts = <String>[];
+      if (r.pulled > 0) parts.add('拉入 ${r.pulled} 本');
+      if (r.pushed > 0) parts.add('上传 ${r.pushed} 本');
+      if (r.deleted > 0) parts.add('移除 ${r.deleted} 本');
+      msg = '同步完成：${parts.join('，')}';
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
     );
   }
 
