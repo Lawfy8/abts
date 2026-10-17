@@ -8,6 +8,7 @@ import '../core/theme/app_theme.dart';
 import '../pages/player_page.dart';
 import '../player/book_player.dart';
 import '../services/bili_api.dart';
+import '../services/shelf_sync.dart';
 import '../widgets/book_cards.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/shelf_common.dart';
@@ -20,9 +21,39 @@ class BookshelfPage extends StatefulWidget {
   State<BookshelfPage> createState() => _BookshelfPageState();
 }
 
-class _BookshelfPageState extends State<BookshelfPage> {
+class _BookshelfPageState extends State<BookshelfPage> with WidgetsBindingObserver {
   /// 已经拉过章节数的书，避免每帧重复请求
   static final _asked = <String>{};
+
+  /// 上次自动同步的时间，避免频繁切前后台时反复请求
+  DateTime? _lastAutoSync;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// 从后台切回前台时自动同步一次。
+  ///
+  /// 两台设备交替用时，最自然的时机就是「我拿起另一台手机」那一刻；
+  /// 仅在 App 启动时同步一次并不够。这里加 30 秒节流，
+  /// 避免快速切换前后台导致连续请求。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final now = DateTime.now();
+    final last = _lastAutoSync;
+    if (last != null && now.difference(last).inSeconds < 30) return;
+    _lastAutoSync = now;
+    unawaited(ShelfSync.instance.sync());
+  }
 
   /// 后台补全总章节数：整本书的百分比要除以真实章节数。
   ///

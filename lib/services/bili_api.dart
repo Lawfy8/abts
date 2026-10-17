@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/network/api_config.dart';
 import '../core/network/bili_client.dart';
+import '../core/network/cookie_jar.dart';
 import '../models/audio_stream.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
@@ -677,15 +678,28 @@ class BiliApi {
     }
     if (!create) return null;
 
+    // 新建收藏夹同样是写操作，必须带 csrf
+    final csrf = _csrf();
+    if (csrf.isEmpty) {
+      debugPrint('[BiliApi] 建收藏夹跳过：Cookie 里没有 bili_jct');
+      return null;
+    }
+
     final res = await _client.post(
       BiliEndpoints.favFolderAdd,
       query: {
         'title': shelfFolderTitle,
         'privacy': 0,
         'intro': '由「阿B听书」自动维护，无需手动编辑',
+        'csrf': csrf,
       },
     );
     final data = res.data as Map;
+    final code = (data['code'] as num?)?.toInt() ?? -1;
+    if (code != 0) {
+      debugPrint('[BiliApi] 建收藏夹失败 code=$code msg=${data['message']}');
+      return null;
+    }
     final body = data['data'];
     if (body is Map) {
       final id = (body['id'] as num?)?.toInt();
@@ -728,6 +742,13 @@ class BiliApi {
     return out;
   }
 
+  /// B 站所有**写操作**（收藏、投币、点赞……）都要求带 csrf 参数，
+  /// 取值就是登录后 Cookie 里的 `bili_jct`。缺了它接口一律返回
+  /// code -111（CSRF 校验失败），表现为「同步显示成功但远端没变化」。
+  ///
+  /// 这是很容易漏的点：接口文档里 csrf 常被写作可选，但实际不带就失败。
+  String _csrf() => CookieJar.instance.get('bili_jct') ?? '';
+
   /// 收藏 / 取消收藏一个视频（用于把本地书架变动推上去）。
   ///
   /// [add] 为 true 表示收藏，false 表示取消。
@@ -736,6 +757,12 @@ class BiliApi {
   /// 客户端只持有 bvid，所以这里先查 view 接口拿 aid —— 该接口返回里
   /// 本来就带 `aid` 字段，一次请求即可，不必额外解析。
   Future<bool> setFav(String bvid, bool add) async {
+    final csrf = _csrf();
+    if (csrf.isEmpty) {
+      debugPrint('[BiliApi] setFav 跳过：Cookie 里没有 bili_jct（未登录？）');
+      return false;
+    }
+
     final mediaId = await shelfFolderId(create: add);
     if (mediaId == null) return false;
 
@@ -750,10 +777,16 @@ class BiliApi {
         'add_media_ids': add ? mediaId : '',
         'del_media_ids': add ? '' : mediaId,
         'platform': 'web',
+        'csrf': csrf,
       },
     );
     final data = res.data as Map;
-    return (data['code'] as num?)?.toInt() == 0;
+    final code = (data['code'] as num?)?.toInt() ?? -1;
+    if (code != 0) {
+      debugPrint('[BiliApi] setFav 失败 code=$code msg=${data['message']}');
+      return false;
+    }
+    return true;
   }
 
   /// bvid -> aid（收藏接口需要 aid）
