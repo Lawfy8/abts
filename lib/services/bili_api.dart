@@ -627,4 +627,157 @@ class BiliApi {
       face: ImageUrl.https(data['face'] as String? ?? ''),
     );
   }
+
+  // =====================================================================
+  // 收藏夹同步
+  //
+  // 书架不再只存本地，而是写进用户自己的 B 站收藏夹。这样：
+  //   * 同一账号在安卓/iOS 登录后看到同一份书架
+  //   * 重装 App 不丢
+  //   * 不需要我们维护任何服务器
+  //
+  // 全部接口都要登录态（Cookie），未登录时上层应跳过同步。
+  // =====================================================================
+
+  /// 书架收藏夹的名字。找不到就用它自动新建一个，避免用户手动建。
+  static const String shelfFolderTitle = '阿B听书书架';
+
+  /// 列出我创建的收藏夹，返回 media_id -> 标题。
+  ///
+  /// B 站把「默认收藏夹」和普通收藏夹放在同一个列表里，
+  /// 两者都能写，所以优先复用同名收藏夹，没有才新建。
+  Future<List<({int id, String title, int count})>> favFolders() async {
+    final res = await _client.get(
+      BiliEndpoints.favFolderList,
+      query: {'up_mid': await _selfMid()},
+    );
+    final data = res.data as Map;
+    final body = data['data'];
+    // 未登录时 data 为 null，走空列表让上层静默跳过
+    if (body is! Map) return const [];
+    final list = body['list'] as List? ?? [];
+    return list
+        .map((e) {
+          final m = (e as Map).cast<String, dynamic>();
+          return (
+            id: (m['id'] as num?)?.toInt() ?? 0,
+            title: m['title'] as String? ?? '',
+            count: (m['media_count'] as num?)?.toInt() ?? 0,
+          );
+        })
+        .where((f) => f.id > 0)
+        .toList();
+  }
+
+  /// 拿到（必要时创建）书架收藏夹的 media_id。
+  Future<int?> shelfFolderId({bool create = true}) async {
+    final folders = await favFolders();
+    for (final f in folders) {
+      if (f.title == shelfFolderTitle) return f.id;
+    }
+    if (!create) return null;
+
+    final res = await _client.post(
+      BiliEndpoints.favFolderAdd,
+      query: {
+        'title': shelfFolderTitle,
+        'privacy': 0,
+        'intro': '由「阿B听书」自动维护，无需手动编辑',
+      },
+    );
+    final data = res.data as Map;
+    final body = data['data'];
+    if (body is Map) {
+      final id = (body['id'] as num?)?.toInt();
+      if (id != null && id > 0) return id;
+    }
+    return null;
+  }
+
+  /// 读取书架收藏夹里的全部 bvid（按收藏时间倒序）。
+  ///
+  /// 分页拉取，最多 [maxPages] 页，避免收藏夹特别大时卡住启动。
+  Future<List<String>> shelfBvids({int maxPages = 5}) async {
+    final mediaId = await shelfFolderId(create: false);
+    if (mediaId == null) return const [];
+
+    final out = <String>[];
+    for (var pn = 1; pn <= maxPages; pn++) {
+      final res = await _client.get(
+        BiliEndpoints.favResourceList,
+        query: {
+          'media_id': mediaId,
+          'pn': pn,
+          'ps': 40,
+          'platform': 'web',
+        },
+      );
+      final data = res.data as Map;
+      final body = data['data'];
+      if (body is! Map) break;
+      final medias = body['medias'] as List? ?? [];
+      if (medias.isEmpty) break;
+      for (final e in medias) {
+        if (e is! Map) continue;
+        final bvid = e['bvid'] as String? ?? '';
+        if (bvid.isNotEmpty) out.add(bvid);
+      }
+      final hasMore = body['has_more'] == true;
+      if (!hasMore) break;
+    }
+    return out;
+  }
+
+  /// 收藏 / 取消收藏一个视频（用于把本地书架变动推上去）。
+  ///
+  /// [add] 为 true 表示收藏，false 表示取消。
+  ///
+  /// 注意：fav/deal 的 `rid` 要的是 **aid（av 号）**，不是 bvid。
+  /// 客户端只持有 bvid，所以这里先查 view 接口拿 aid —— 该接口返回里
+  /// 本来就带 `aid` 字段，一次请求即可，不必额外解析。
+  Future<bool> setFav(String bvid, bool add) async {
+    final mediaId = await shelfFolderId(create: add);
+    if (mediaId == null) return false;
+
+    final aid = await _aidOf(bvid);
+    if (aid <= 0) return false;
+
+    final res = await _client.post(
+      BiliEndpoints.favDeal,
+      query: {
+        'rid': aid,
+        'type': 2,
+        'add_media_ids': add ? mediaId : '',
+        'del_media_ids': add ? '' : mediaId,
+        'platform': 'web',
+      },
+    );
+    final data = res.data as Map;
+    return (data['code'] as num?)?.toInt() == 0;
+  }
+
+  /// bvid -> aid（收藏接口需要 aid）
+  Future<int> _aidOf(String bvid) async {
+    try {
+      final res = await _client.get(
+        BiliEndpoints.view,
+        query: {'bvid': bvid},
+      );
+      final data = res.data as Map;
+      final body = data['data'];
+      if (body is Map) {
+        return ((body as Map)['aid'] as num?)?.toInt() ?? 0;
+      }
+    } catch (_) {
+      // 取不到就当失败，上层静默跳过该条
+    }
+    return 0;
+  }
+
+  /// 取当前登录用户 mid（收藏夹列表接口必须带 up_mid）。
+  Future<int> _selfMid() async {
+    final res = await _client.get(BiliEndpoints.nav);
+    final data = (res.data as Map)['data'] as Map? ?? {};
+    return (data['mid'] as num?)?.toInt() ?? 0;
+  }
 }

@@ -67,11 +67,20 @@ class ImageUrl {
     return '$url@${bucket}w_1e_1c$fmt';
   }
 
-  /// 头像：控件通常只有 20~32 dp，取 240px 档足够 3x 屏使用。
+  /// 头像：控件通常只有 20~52 dp，取 240px 档足够 3x 屏使用。
   ///
-  /// B 站头像原图可能上千像素，而列表里一个 40dp 的圆形头像
-  /// 只需约 120px；走裁剪档能省下绝大部分流量。
-  static String avatar(String input) => sized(input, 60);
+  /// 与 [sized] 的区别是**不带 `1e_1c`**：那个参数让 CDN 直接把图裁成
+  /// 正方形。头像控件多为圆形，若服务端已经裁方、客户端再用
+  /// `BoxFit.cover` 二次裁切，人物会被明显放大截头（实测 B 站头像是
+  /// 竖构图，方形裁切后脸会被放大）。
+  ///
+  /// 这里只要求按宽度缩放（`@Nw`），保留原始宽高比，由客户端按需适配。
+  static String avatar(String input) {
+    final url = https(input);
+    if (url.isEmpty || !_resizable(url)) return url;
+    final px = 240;
+    return '$url@${px}w.webp';
+  }
 
   /// B 站图床要求的请求头（缺少时部分节点会返回 403）。
   ///

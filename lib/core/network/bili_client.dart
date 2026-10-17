@@ -374,16 +374,29 @@ class BiliClient {
   Future<Response<dynamic>> post(
     String url, {
     Map<String, dynamic>? data,
+    Map<String, dynamic>? query,
     Map<String, String>? headers,
     bool jsonBody = true,
   }) async {
     await _throttle();
+    // 部分接口（如收藏夹 fav/deal、folder/add）要求参数放在 query string 里，
+    // 而不是 JSON body。这里把 query 拼到 URL 上，body 仍按 jsonBody 处理。
+    final String target;
+    if (query == null || query.isEmpty) {
+      target = url;
+    } else {
+      target = Uri.parse(url).replace(
+        queryParameters: Map<String, String>.fromEntries(
+          query.entries.map((e) => MapEntry(e.key, '${e.value}')),
+        ),
+      ).toString();
+    }
     Response<dynamic>? res;
     Object? lastErr;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
         res = await _dio.post<dynamic>(
-          url,
+          target,
           data: jsonBody ? jsonEncode(data ?? const {}) : data,
           options: Options(
             headers: {'Referer': BiliEndpoints.home, ...?headers},
@@ -412,7 +425,7 @@ class BiliClient {
       await Future<void>.delayed(Duration(milliseconds: _backoff[i]));
       try {
         resp = _normalize(await _dio.post<dynamic>(
-          url,
+          target,
           data: jsonBody ? jsonEncode(data ?? const {}) : data,
           options: Options(
             headers: {'Referer': BiliEndpoints.home, ...?headers},

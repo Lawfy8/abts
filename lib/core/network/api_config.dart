@@ -49,6 +49,29 @@ class BiliEndpoints {
   static const String qrPoll =
       'https://passport.bilibili.com/x/passport-login/web/qrcode/poll';
 
+  // ---------------------------------------------------------------------
+  // 收藏夹（跨设备同步的实现：读写 B 站账号自己的收藏夹，不需要自建服务器）
+  //
+  // 说明：这里用 B 站「视频收藏夹」承载听书书架。用户在任何设备登录同一
+  // B 站账号，读到的都是同一份数据，重装 App 也不会丢。
+  // ---------------------------------------------------------------------
+
+  /// 我创建的收藏夹列表（需要登录，返回 media_id）
+  static const String favFolderList =
+      '$base/x/v3/fav/folder/created/list-all';
+
+  /// 某个收藏夹里的内容（bvid 列表）
+  static const String favResourceList = '$base/x/v3/fav/resource/list';
+
+  /// 添加/取消收藏（一次一个资源）
+  static const String favDeal = '$base/x/v3/fav/resource/deal';
+
+  /// 新建收藏夹
+  static const String favFolderAdd = '$base/x/v3/fav/folder/add';
+
+  /// 检查一批视频是否已被收藏（用于还原已存在状态）
+  static const String favResourceIds = '$base/x/v3/fav/resource/ids';
+
   /// 原作品网页链接
   static String video(String bvid) => '$home/video/$bvid';
 

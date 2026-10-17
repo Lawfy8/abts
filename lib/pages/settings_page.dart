@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -19,6 +21,9 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   bool _loading = true;
   bool _ignoring = false;
+
+  /// 「忽略电池优化」只有 Android 有，iOS 无对应概念，整块不渲染。
+  bool get _isAndroid => Platform.isAndroid;
 
   @override
   void initState() {
@@ -95,9 +100,15 @@ class _SettingsPageState extends State<SettingsPage> {
         padding: const EdgeInsets.only(top: 8, bottom: 32),
         children: [
           _buildAccountCard(auth),
-          const SizedBox(height: 12),
-          _sectionTitle('播放与后台'),
-          SwitchListTile(
+          // 「播放与后台」整块只在 Android 出现。
+          // 「忽略电池优化」是 Android 独有概念；iOS 没有对应权限，
+          // DeviceService 在非 Android 上直接返回 true，于是开关永远显示
+          // 「已开启」、点了也没有任何反应 —— 纯属误导，故整体隐藏。
+          // iOS 的后台播放靠 Info.plist 的 UIBackgroundModes: audio。
+          if (_isAndroid) ...[
+            const SizedBox(height: 12),
+            _sectionTitle('播放与后台'),
+            SwitchListTile(
             value: _ignoring,
             onChanged: _loading ? null : _toggle,
             activeThumbColor: AppTheme.accent,
@@ -134,6 +145,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
           ),
+          ],
         ],
       ),
     );
@@ -180,7 +192,10 @@ class _SettingsPageState extends State<SettingsPage> {
                           ImageUrl.avatar(auth.userFace),
                           headers: ImageUrl.headers,
                         ),
-                        fit: BoxFit.cover,
+                        // contain：完整显示头像，不裁掉边缘。
+                        // 头像本身就按原始比例取图（无 1e_1c 方形裁切），
+                        // 这里若用 cover 会二次裁切，人物被放大截头。
+                        fit: BoxFit.contain,
                         onError: (_, _) {},
                       )
                     : null,

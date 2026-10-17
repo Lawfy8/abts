@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/book.dart';
+import '../../services/shelf_sync.dart';
 
 /// 书架上的书 + 阅读进度（本地持久化）
 class ShelfBook {
@@ -195,7 +196,14 @@ class ShelfStore extends ChangeNotifier {
   }
 
   /// 加入书架（已存在则刷新元数据）
-  Future<void> add(Book book, {ShelfBook? withProgress}) async {
+  ///
+  /// [pushToRemote] 为 false 时不同步到 B 站收藏夹 —— 同步流程内部从远端
+  /// 补书时必须传 false，否则会把刚拉下来的书又推回远端，形成来回写入。
+  Future<void> add(
+    Book book, {
+    ShelfBook? withProgress,
+    bool pushToRemote = true,
+  }) async {
     final existing = byBvid(book.bvid);
     if (existing != null) {
       existing.book = book; // 刷新元数据（封面/标题等可能已变化）
@@ -205,13 +213,24 @@ class ShelfStore extends ChangeNotifier {
         withProgress ??
             ShelfBook(book: book, lastCid: book.chapters?.first.cid ?? 0),
       );
+      if (pushToRemote) {
+        // 新增时同步到 B 站收藏夹（失败静默，下次整轮同步会补）
+        ShelfSync.instance.pushAdd(book);
+      }
     }
     notifyListeners();
     await _save();
   }
 
-  Future<void> remove(String bvid) async {
+  /// 从书架移除
+  ///
+  /// [pushToRemote] 语义同 [add]。
+  Future<void> remove(String bvid, {bool pushToRemote = true}) async {
     _books.removeWhere((b) => b.book.bvid == bvid);
+    if (pushToRemote) {
+      // 同步从远端收藏夹移除（失败静默）
+      ShelfSync.instance.pushRemove(bvid);
+    }
     notifyListeners();
     await _save();
   }

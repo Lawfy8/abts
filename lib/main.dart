@@ -19,6 +19,7 @@ import 'player/bili_audio_handler.dart';
 import 'player/book_player.dart';
 import 'services/auth_store.dart';
 import 'services/cache_notifier.dart';
+import 'services/shelf_sync.dart';
 import 'services/umeng_analytics.dart';
 
 Future<void> main() async {
@@ -44,10 +45,15 @@ Future<void> _bootstrap() async {
       LoginStore.instance.load(),
       FollowStore.instance.load(),
       CacheStore.instance.load(),
+      ShelfSync.instance.loadPrefs(),
     ]).timeout(const Duration(seconds: 6));
   } catch (e) {
     debugPrint('[main] local init failed: $e');
   }
+
+  // 书架与 B 站收藏夹同步：后台跑，不阻塞启动。
+  // 未登录或网络失败都会静默跳过（同步是增强功能，不是必需路径）。
+  unawaited(ShelfSync.instance.sync());
 
   // 播放器初始化 + 系统媒体会话绑定（失败也进主界面，播放时自动降级）
   final player = BookPlayer.instance;
