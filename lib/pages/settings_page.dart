@@ -232,8 +232,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     Expanded(
                       child: Text(
-                        '书架存在你的 B 站收藏夹「阿B听书书架」里，'
-                        '换设备登录同一账号即可看到。',
+                        '书架与收听进度都存在你的 B 站收藏夹'
+                        '「阿B听书书架」里，换设备登录同一账号即可接着听。',
                         style: TextStyle(
                           fontSize: 11,
                           color: AppTheme.textHint,
@@ -272,13 +272,17 @@ class _SettingsPageState extends State<SettingsPage> {
     String msg;
     if (!r.ok) {
       msg = r.error ?? '同步失败';
-    } else if (r.pulled == 0 && r.pushed == 0 && r.deleted == 0) {
+    } else if (r.pulled == 0 &&
+        r.pushed == 0 &&
+        r.deleted == 0 &&
+        !r.progressSynced) {
       msg = '已是最新';
     } else {
       final parts = <String>[];
       if (r.pulled > 0) parts.add('拉入 ${r.pulled} 本');
       if (r.pushed > 0) parts.add('上传 ${r.pushed} 本');
       if (r.deleted > 0) parts.add('移除 ${r.deleted} 本');
+      if (r.progressSynced) parts.add('进度已同步');
       msg = '同步完成：${parts.join('，')}';
     }
     ScaffoldMessenger.of(context).showSnackBar(

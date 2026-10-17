@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/storage/shelf_store.dart';
 import '../models/book.dart';
 import 'bili_api.dart';
+import 'progress_codec.dart';
 
 /// 一次同步的结果，用于 UI 展示。
 class ShelfSyncResult {
@@ -21,6 +22,9 @@ class ShelfSyncResult {
   /// 因远端已删除而在本地移除的本数
   final int deleted;
 
+  /// 播放进度是否已写回远端
+  final bool progressSynced;
+
   /// 失败原因（ok 为 true 时通常为 null）
   final String? error;
 
@@ -29,6 +33,7 @@ class ShelfSyncResult {
     this.pulled = 0,
     this.pushed = 0,
     this.deleted = 0,
+    this.progressSynced = false,
     this.error,
   });
 
@@ -235,6 +240,7 @@ class ShelfSync extends ChangeNotifier {
       var pushed = 0;
       var deleted = 0;
       var pulled = 0;
+      var progressSynced = false;
 
       // ---- 1. 先偿还待办队列 ----
       // 顺序上先删后加：同一 bvid 不会同时存在于两个队列，
@@ -313,6 +319,50 @@ class ShelfSync extends ChangeNotifier {
         deleted++;
       }
 
+      // ---- 5. 播放进度同步 ----
+      //
+      // 书架成员关系靠收藏夹本身，而**进度**没有原生字段可用，
+      // 只能压成 JSON 写进收藏夹的 intro（简介）。
+      //
+      // 顺序：先读远端、合并进本地，再决定要不要把本地写回去。
+      // 这样两台设备交替用时，各自都能拿到最新进度；
+      // 若本地更新（刚在本机听过），则以本地为准写回远端。
+      try {
+        final mediaId = await client.shelfFolderId(create: false);
+        if (mediaId != null) {
+          final meta = await client.folderMeta(mediaId);
+          if (meta != null) {
+            final remoteProgress = ProgressCodec.decode(meta.intro);
+            final cur = ShelfStore.instance.books;
+            final merged =
+                ProgressCodec.mergeInto(cur, remoteProgress);
+
+            // 把合并后的进度重新编码，与远端原文比较；
+            // 不同就说明本地有更新，需要写回。
+            final encoded = ProgressCodec.encode(cur);
+            if (encoded.isNotEmpty && encoded != meta.intro) {
+              final ok = await client.setFolderIntro(
+                mediaId,
+                title: meta.title,
+                privacy: meta.privacy,
+                intro: encoded,
+              );
+              if (ok) progressSynced = true;
+            }
+            if (merged > 0) {
+              await ShelfStore.instance.saveNow();
+            }
+            debugPrint(
+              '[ShelfSync] 进度：远端 ${remoteProgress.length} 条, '
+              '合并 $merged 条, 回写 ${progressSynced ? "是" : "否"}',
+            );
+          }
+        }
+      } catch (e) {
+        // 进度同步失败不影响书架成员关系，单独吞掉
+        debugPrint('[ShelfSync] 进度同步失败: $e');
+      }
+
       _lastSyncAt = DateTime.now().millisecondsSinceEpoch;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_prefLastSync, _lastSyncAt);
@@ -322,6 +372,7 @@ class ShelfSync extends ChangeNotifier {
         pulled: pulled,
         pushed: pushed,
         deleted: deleted,
+        progressSynced: progressSynced,
       );
       lastResult = result;
       debugPrint(

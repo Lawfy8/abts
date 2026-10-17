@@ -69,6 +69,18 @@ class BiliEndpoints {
   /// 新建收藏夹
   static const String favFolderAdd = '$base/x/v3/fav/folder/add';
 
+  /// 编辑收藏夹（改名字/简介/公开性）
+  ///
+  /// 用它承载**播放进度同步**：把进度压缩成 JSON 写进 intro 字段。
+  /// 比 B 站历史记录更好的地方：
+  ///   * 历史记录 30 天清理，且会污染用户「观看历史」
+  ///   * intro 跟着收藏夹走，长期有效，不干扰别处
+  /// 容量约 2000 字，紧凑格式可存 58 本左右的进度。
+  static const String favFolderEdit = '$base/x/v3/fav/folder/edit';
+
+  /// 单个收藏夹详情（读 title / intro / privacy）
+  static const String favFolderInfo = '$base/x/v3/fav/folder/info';
+
   /// 检查一批视频是否已被收藏（用于还原已存在状态）
   static const String favResourceIds = '$base/x/v3/fav/resource/ids';
 

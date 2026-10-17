@@ -670,6 +670,73 @@ class BiliApi {
         .toList();
   }
 
+  /// 读出收藏夹的元信息（简介用于承载播放进度快照）。
+  ///
+  /// 返回 null 表示：未登录 / 收藏夹不存在 / 请求失败。
+  /// 上层拿到 null 时应按「没有远端进度」处理，**不要**清空本地进度。
+  ///
+  /// 为什么要连 title / privacy 一起读：写回时（fav/folder/edit）
+  /// 三个字段是一起提交的，少传哪个就可能把对应字段清空，
+  /// 所以必须先把原值取出来再原样带上。
+  Future<({String title, String intro, int privacy})?> folderMeta(
+    int mediaId,
+  ) async {
+    try {
+      final res = await _client.get(
+        BiliEndpoints.favFolderInfo,
+        query: {'media_id': mediaId},
+      );
+      final data = res.data as Map;
+      if ((data['code'] as num?)?.toInt() != 0) return null;
+      final body = data['data'];
+      if (body is! Map) return null;
+      return (
+        title: body['title'] as String? ?? shelfFolderTitle,
+        intro: body['intro'] as String? ?? '',
+        privacy: (body['privacy'] as num?)?.toInt() ?? 0,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 覆盖写入收藏夹简介。
+  ///
+  /// 注意：这个接口要求把 title / privacy / intro 一起带上，
+  /// 少传哪个就可能把对应字段清空。因此调用方必须先把原值读出来，
+  /// 这里用 [title] / [privacy] 参数显式透传。
+  Future<bool> setFolderIntro(
+    int mediaId, {
+    required String title,
+    required int privacy,
+    required String intro,
+  }) async {
+    final csrf = _csrf();
+    if (csrf.isEmpty) return false;
+    try {
+      final res = await _client.post(
+        BiliEndpoints.favFolderEdit,
+        query: {
+          'media_id': mediaId,
+          'title': title,
+          'privacy': privacy,
+          'intro': intro,
+          'csrf': csrf,
+        },
+      );
+      final data = res.data as Map;
+      final code = (data['code'] as num?)?.toInt() ?? -1;
+      if (code != 0) {
+        debugPrint('[BiliApi] 写简介失败 code=$code msg=${data['message']}');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[BiliApi] 写简介异常: $e');
+      return false;
+    }
+  }
+
   /// 拿到（必要时创建）书架收藏夹的 media_id。
   Future<int?> shelfFolderId({bool create = true}) async {
     final folders = await favFolders();

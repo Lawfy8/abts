@@ -185,6 +185,15 @@ class ShelfStore extends ChangeNotifier {
     );
   }
 
+  /// 立即落盘并刷新 UI。
+  ///
+  /// 同步流程合并了远端进度后调用：那些改动直接写在 ShelfBook 对象上，
+  /// 不走 add/remove，所以既不会自动保存，也不会通知监听者。
+  Future<void> saveNow() async {
+    notifyListeners();
+    await _save();
+  }
+
   bool isOnShelf(String bvid) => _books.any((b) => b.book.bvid == bvid);
 
   ShelfBook? byBvid(String bvid) {
