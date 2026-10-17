@@ -109,42 +109,42 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 12),
             _sectionTitle('播放与后台'),
             SwitchListTile(
-            value: _ignoring,
-            onChanged: _loading ? null : _toggle,
-            activeThumbColor: AppTheme.accent,
-            secondary:
-                Icon(Icons.battery_saver_rounded, color: AppTheme.accent),
-            title: Text(
-              '后台留存保护',
-              style: TextStyle(fontSize: 14, color: AppTheme.textMain),
-            ),
-            subtitle: Text(
-              _loading
-                  ? '检测中…'
-                  : _ignoring
-                      ? '已豁免电池优化，退到后台更不易被系统清理'
-                      : '未开启，长时间后台播放可能被系统中断',
-              style: TextStyle(fontSize: 12, color: AppTheme.textSub),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppTheme.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.divider),
+              value: _ignoring,
+              onChanged: _loading ? null : _toggle,
+              activeThumbColor: AppTheme.accent,
+              secondary:
+                  Icon(Icons.battery_saver_rounded, color: AppTheme.accent),
+              title: Text(
+                '后台留存保护',
+                style: TextStyle(fontSize: 14, color: AppTheme.textMain),
               ),
-              child: Text(
-                '播放时应用会以前台服务常驻（通知栏可见），熄屏/锁屏也能继续听。'
-                '开启「后台留存保护」可进一步降低被清理的概率。\n\n'
-                '若仍被中断，建议在系统设置中为本应用打开「自启动」并设置「无限制」后台策略。',
-                style: TextStyle(
-                    fontSize: 12, color: AppTheme.textSub, height: 1.6),
+              subtitle: Text(
+                _loading
+                    ? '检测中…'
+                    : _ignoring
+                        ? '已豁免电池优化，退到后台更不易被系统清理'
+                        : '未开启，长时间后台播放可能被系统中断',
+                style: TextStyle(fontSize: 12, color: AppTheme.textSub),
               ),
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.divider),
+                ),
+                child: Text(
+                  '播放时应用会以前台服务常驻（通知栏可见），熄屏/锁屏也能继续听。'
+                  '开启「后台留存保护」可进一步降低被清理的概率。\n\n'
+                  '若仍被中断，建议在系统设置中为本应用打开「自启动」并设置「无限制」后台策略。',
+                  style: TextStyle(
+                      fontSize: 12, color: AppTheme.textSub, height: 1.6),
+                ),
+              ),
+            ),
           ],
         ],
       ),
