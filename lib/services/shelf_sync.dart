@@ -55,6 +55,11 @@ class ShelfSync {
     final prefs = await SharedPreferences.getInstance();
     _lastSyncAt = prefs.getInt(_prefLastSync) ?? 0;
     _enabled = prefs.getBool(_prefEnabled) ?? true;
+
+    // 把「书架变动 -> 推送远端」挂到存储层的回调上。
+    // 存储层不 import 本文件，因此这里注入，避免循环依赖。
+    ShelfStore.instance.onRemoteAdd = pushAdd;
+    ShelfStore.instance.onRemoteRemove = pushRemove;
   }
 
   Future<void> setEnabled(bool value) async {

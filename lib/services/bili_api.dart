@@ -766,7 +766,7 @@ class BiliApi {
       final data = res.data as Map;
       final body = data['data'];
       if (body is Map) {
-        return ((body as Map)['aid'] as num?)?.toInt() ?? 0;
+        return (body['aid'] as num?)?.toInt() ?? 0;
       }
     } catch (_) {
       // 取不到就当失败，上层静默跳过该条

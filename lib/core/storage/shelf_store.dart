@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/book.dart';
-import '../../services/shelf_sync.dart';
 
 /// 书架上的书 + 阅读进度（本地持久化）
 class ShelfBook {
@@ -195,10 +194,19 @@ class ShelfStore extends ChangeNotifier {
     return null;
   }
 
+  /// 书架变动时的外部通知钩子。
+  ///
+  /// 用回调而不是直接 import ShelfSync，原因有二：
+  ///   1. 避免 core/storage 与 services 互相 import 形成循环依赖；
+  ///   2. 让存储层保持纯粹 —— 它不该知道「网络」这回事。
+  /// 由 ShelfSync 在初始化时注入具体实现。
+  void Function(Book book)? onRemoteAdd;
+  void Function(String bvid)? onRemoteRemove;
+
   /// 加入书架（已存在则刷新元数据）
   ///
-  /// [pushToRemote] 为 false 时不同步到 B 站收藏夹 —— 同步流程内部从远端
-  /// 补书时必须传 false，否则会把刚拉下来的书又推回远端，形成来回写入。
+  /// [pushToRemote] 为 false 时不触发远端同步 —— 同步流程内部从远端补书时
+  /// 必须传 false，否则会把刚拉下来的书又推回远端，形成来回写入。
   Future<void> add(
     Book book, {
     ShelfBook? withProgress,
@@ -214,8 +222,7 @@ class ShelfStore extends ChangeNotifier {
             ShelfBook(book: book, lastCid: book.chapters?.first.cid ?? 0),
       );
       if (pushToRemote) {
-        // 新增时同步到 B 站收藏夹（失败静默，下次整轮同步会补）
-        ShelfSync.instance.pushAdd(book);
+        onRemoteAdd?.call(book);
       }
     }
     notifyListeners();
@@ -228,8 +235,7 @@ class ShelfStore extends ChangeNotifier {
   Future<void> remove(String bvid, {bool pushToRemote = true}) async {
     _books.removeWhere((b) => b.book.bvid == bvid);
     if (pushToRemote) {
-      // 同步从远端收藏夹移除（失败静默）
-      ShelfSync.instance.pushRemove(bvid);
+      onRemoteRemove?.call(bvid);
     }
     notifyListeners();
     await _save();
